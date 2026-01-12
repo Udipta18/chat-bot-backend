@@ -72,23 +72,32 @@ def match_direct_tool(query: str) -> Tuple[Optional[str], Optional[Dict[str, Any
     query_lower = query.lower().strip()
     
     for tool_name, config in DIRECT_TOOL_PATTERNS.items():
+        # Special handling for calculator
+        if tool_name == "calculate":
+            operators = config.get("operators", [])
+            if any(op in query_lower for op in operators):
+                numbers = re.findall(r'\d+\.?\d*', query)
+                if len(numbers) >= 2:
+                    for op in ['+', '-', '*', '/']:
+                        if op in query:
+                            return tool_name, {"expression": f"{numbers[0]} {op} {numbers[1]}"}
+                    op_map = {"plus": "+", "minus": "-", "times": "*", "divided": "/", "multiply": "*"}
+                    for word, op in op_map.items():
+                        if word in query_lower:
+                            return tool_name, {"expression": f"{numbers[0]} {op} {numbers[1]}"}
+            continue
+
         keywords = config.get("keywords", [])
-        
-        if any(kw in query_lower for kw in keywords):
-            # Special handling for calculator
-            if tool_name == "calculate":
-                operators = config.get("operators", [])
-                if any(op in query_lower for op in operators):
-                    numbers = re.findall(r'\d+\.?\d*', query)
-                    if len(numbers) >= 2:
-                        for op in ['+', '-', '*', '/']:
-                            if op in query:
-                                return tool_name, {"expression": f"{numbers[0]} {op} {numbers[1]}"}
-                        op_map = {"plus": "+", "minus": "-", "times": "*", "divided": "/", "multiply": "*"}
-                        for word, op in op_map.items():
-                            if word in query_lower:
-                                return tool_name, {"expression": f"{numbers[0]} {op} {numbers[1]}"}
-            else:
+        for kw in keywords:
+            # For short keywords, use word boundaries to avoid false positives (e.g. "time" in "lifestyle")
+            if len(kw) <= 5:
+                pattern = rf"\b{re.escape(kw)}\b"
+                if re.search(pattern, query_lower):
+                    # But if it's "free time", "part time", etc., don't match for current time
+                    if tool_name == "get_current_time" and any(x in query_lower for x in ["free", "part", "half", "full"]):
+                        continue
+                    return tool_name, None
+            elif kw in query_lower:
                 return tool_name, None
     
     return None, None
