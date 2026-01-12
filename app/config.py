@@ -40,7 +40,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 ACTIVE_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 
 # Gemini Config
-GEMINI_MODEL_NAME = "gemini-pro"
+GEMINI_MODEL_NAME = "gemini-2.0-flash"
 
 
 # CORS origins

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import modules
-from app.config import CORS_ORIGINS, MODEL_NAME, CACHE_TTL_SECONDS, COST_PER_1K_INPUT_TOKENS, COST_PER_1K_OUTPUT_TOKENS, ACTIVE_PROVIDER
+from app.config import CORS_ORIGINS, MODEL_NAME, CACHE_TTL_SECONDS, COST_PER_1K_INPUT_TOKENS, COST_PER_1K_OUTPUT_TOKENS, ACTIVE_PROVIDER, GEMINI_MODEL_NAME
 from app.schemas import ChatMessage, ChatResponse
 from app.guardrails import check_guardrails, BLOCKED_WORDS, OFF_TOPIC_PATTERNS
 from app.cache import get_cached_response, cache_response, clear_cache, get_cache_stats, RESPONSE_CACHE
@@ -57,7 +57,7 @@ async def root():
         "message": "Voice Chatbot API is running",
         "version": "2.1.0",
         "provider": ACTIVE_PROVIDER,
-        "model": MODEL_NAME if ACTIVE_PROVIDER == "openai" else "gemini-pro"
+        "model": MODEL_NAME if ACTIVE_PROVIDER == "openai" else GEMINI_MODEL_NAME
     }
 
 @app.get("/health")
