@@ -1,6 +1,4 @@
 """
 Voice Chatbot API Package
 """
-from app.main import app
-
-__all__ = ["app"]
+# Don't import app here to avoid circular imports
