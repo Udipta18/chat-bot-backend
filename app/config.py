@@ -34,6 +34,14 @@ def calculate_cost(prompt_tokens: int, completion_tokens: int) -> float:
 # ============================================
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# Active Provider: "openai" or "gemini"
+ACTIVE_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
+
+# Gemini Config
+GEMINI_MODEL_NAME = "gemini-pro"
+
 
 # CORS origins
 CORS_ORIGINS = [

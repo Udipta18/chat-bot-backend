@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import modules
-from app.config import CORS_ORIGINS, MODEL_NAME, CACHE_TTL_SECONDS, COST_PER_1K_INPUT_TOKENS, COST_PER_1K_OUTPUT_TOKENS
+from app.config import CORS_ORIGINS, MODEL_NAME, CACHE_TTL_SECONDS, COST_PER_1K_INPUT_TOKENS, COST_PER_1K_OUTPUT_TOKENS, ACTIVE_PROVIDER
 from app.schemas import ChatMessage, ChatResponse
 from app.guardrails import check_guardrails, BLOCKED_WORDS, OFF_TOPIC_PATTERNS
 from app.cache import get_cached_response, cache_response, clear_cache, get_cache_stats, RESPONSE_CACHE
@@ -55,8 +55,9 @@ async def root():
     """Root endpoint"""
     return {
         "message": "Voice Chatbot API is running",
-        "version": "2.0.0",
-        "model": MODEL_NAME
+        "version": "2.1.0",
+        "provider": ACTIVE_PROVIDER,
+        "model": MODEL_NAME if ACTIVE_PROVIDER == "openai" else "gemini-pro"
     }
 
 @app.get("/health")
@@ -185,11 +186,16 @@ async def chat(message: ChatMessage):
                 return ChatResponse(response=response_text, cost_usd=0.0)
         
         # ============================================
-        # STEP 4: OPENAI API CALL (PAID)
+        # STEP 4: AI PROVIDER CALL (PAID)
         # ============================================
-        logger.info(f"💵 PAID - No direct match, calling OpenAI API")
+        logger.info(f"💵 PAID - No direct match, calling AI Provider: {ACTIVE_PROVIDER}")
         
-        response_text, total_cost = chat_with_openai(message.message, message.history)
+        if ACTIVE_PROVIDER == "gemini":
+            from app.gemini_service import chat_with_gemini
+            response_text, total_cost = chat_with_gemini(message.message, message.history)
+        else:
+            from app.openai_service import chat_with_openai
+            response_text, total_cost = chat_with_openai(message.message, message.history)
         
         # Cache the response
         cache_response(message.message, response_text)
