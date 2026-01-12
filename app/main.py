@@ -242,6 +242,92 @@ def cache_response(query: str, response: str):
     logger.info(f"📦 CACHE STORED - Query cached (total entries: {len(RESPONSE_CACHE)})")
 
 # ============================================
+# DIRECT TOOL MATCHING - FREE! No OpenAI call
+# ============================================
+# Common queries are matched by keywords and handled directly
+# This saves money by avoiding OpenAI API calls
+
+# Keyword patterns for direct tool matching
+DIRECT_TOOL_PATTERNS = {
+    "get_current_time": {
+        "keywords": ["time", "clock", "what time", "current time", "time now"],
+        "requires_params": False
+    },
+    "get_current_date": {
+        "keywords": ["date", "today", "what day", "today's date", "current date", "which day"],
+        "requires_params": False
+    },
+    "get_recent_tours": {
+        "keywords": ["tour", "tours", "trip", "trips", "vacation", "holiday", "package", "travel package", 
+                     "upcoming tour", "available tour", "show tour", "list tour", "what tour"],
+        "requires_params": False
+    },
+    "get_bus_fares": {
+        "keywords": ["bus", "fare", "fares", "bus fare", "bus price", "bus cost", "bus ticket", 
+                     "volvo", "sleeper", "deluxe bus", "ordinary bus", "express bus", "bus rate"],
+        "requires_params": False
+    },
+    "get_contact_info": {
+        "keywords": ["contact", "phone", "call", "email", "address", "office", "reach you", 
+                     "phone number", "contact number", "how to contact", "where are you"],
+        "requires_params": False
+    },
+    "get_booking_info": {
+        "keywords": ["book", "booking", "reserve", "reservation", "how to book", "payment", 
+                     "pay", "book tour", "book bus", "make booking", "book ticket"],
+        "requires_params": False
+    },
+    "calculate": {
+        "keywords": ["calculate", "compute", "math", "add", "subtract", "multiply", "divide"],
+        "operators": ["+", "-", "*", "/", "plus", "minus", "times", "divided"],
+        "requires_params": True
+    }
+}
+
+def match_direct_tool(query: str) -> tuple:
+    """
+    Match query to a tool using keywords (FREE - no OpenAI call).
+    Returns: (tool_name, params) or (None, None)
+    """
+    query_lower = query.lower().strip()
+    
+    for tool_name, config in DIRECT_TOOL_PATTERNS.items():
+        keywords = config.get("keywords", [])
+        
+        # Check if any keyword matches
+        if any(kw in query_lower for kw in keywords):
+            # Special handling for calculator - needs operators
+            if tool_name == "calculate":
+                operators = config.get("operators", [])
+                if any(op in query_lower for op in operators):
+                    # Extract expression from query
+                    # Try to find numbers and operators
+                    import re
+                    numbers = re.findall(r'\d+\.?\d*', query)
+                    if len(numbers) >= 2:
+                        # Try to build expression
+                        for op in ['+', '-', '*', '/']:
+                            if op in query:
+                                return tool_name, {"expression": f"{numbers[0]} {op} {numbers[1]}"}
+                        # Check word operators
+                        op_map = {"plus": "+", "minus": "-", "times": "*", "divided": "/", "multiply": "*"}
+                        for word, op in op_map.items():
+                            if word in query_lower:
+                                return tool_name, {"expression": f"{numbers[0]} {op} {numbers[1]}"}
+            else:
+                # Non-parameterized tools
+                return tool_name, None
+    
+    return None, None
+
+# Stats for direct matching
+direct_match_stats = {
+    "matches": 0,
+    "api_calls_saved": 0,
+    "cost_saved": 0.0
+}
+
+# ============================================
 # TOOL FUNCTIONS - Add your custom tools here
 # ============================================
 
@@ -484,6 +570,31 @@ async def clear_cache():
     logger.info(f"📦 CACHE CLEARED - Removed {entries_cleared} entries")
     return {"message": f"Cache cleared. Removed {entries_cleared} entries."}
 
+@app.get("/api/stats")
+async def usage_stats():
+    """Get comprehensive usage statistics"""
+    total_requests = cache_stats["hits"] + cache_stats["misses"]
+    cache_hit_rate = (cache_stats["hits"] / total_requests * 100) if total_requests > 0 else 0
+    
+    return {
+        "model": MODEL_NAME,
+        "cache": {
+            "entries": len(RESPONSE_CACHE),
+            "hits": cache_stats["hits"],
+            "misses": cache_stats["misses"],
+            "hit_rate": f"{cache_hit_rate:.1f}%",
+            "cost_saved": f"${cache_stats['saved_cost']:.4f}"
+        },
+        "direct_matching": {
+            "matches": direct_match_stats["matches"],
+            "api_calls_saved": direct_match_stats["api_calls_saved"],
+            "cost_saved": f"${direct_match_stats['cost_saved']:.4f}"
+        },
+        "total_savings": f"${cache_stats['saved_cost'] + direct_match_stats['cost_saved']:.4f}",
+        "supported_direct_tools": list(DIRECT_TOOL_PATTERNS.keys())
+    }
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage):
     """Process chat message using OpenAI function calling with guardrails and caching"""
@@ -504,6 +615,38 @@ async def chat(message: ChatMessage):
         cached_response = get_cached_response(message.message)
         if cached_response:
             return ChatResponse(response=cached_response, cost_usd=0.0)
+        
+        # ============================================
+        # DIRECT TOOL MATCHING - FREE! No OpenAI call
+        # ============================================
+        # Handle common queries directly without calling OpenAI
+        tool_name, tool_params = match_direct_tool(message.message)
+        
+        if tool_name and tool_name in TOOL_FUNCTIONS:
+            logger.info(f"🆓 FREE - Direct tool match: {tool_name}")
+            direct_match_stats["matches"] += 1
+            direct_match_stats["api_calls_saved"] += 1
+            direct_match_stats["cost_saved"] += 0.001  # Approximate savings
+            
+            # Execute the tool directly
+            func = TOOL_FUNCTIONS[tool_name]
+            if tool_params:
+                response_text = func(**tool_params)
+            else:
+                response_text = func()
+            
+            logger.info(f"🆓 Direct tool result: {response_text[:100]}...")
+            logger.info(f"💚 API calls saved: {direct_match_stats['api_calls_saved']}, Total saved: ${direct_match_stats['cost_saved']:.4f}")
+            
+            # Cache the response
+            cache_response(message.message, response_text)
+            
+            return ChatResponse(response=response_text, cost_usd=0.0)
+        
+        # ============================================
+        # OPENAI API CALL - Only for complex queries
+        # ============================================
+        logger.info(f"💵 PAID - No direct match, calling OpenAI API")
         
         client = get_openai_client()
         total_cost = 0.0
